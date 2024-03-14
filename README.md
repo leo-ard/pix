@@ -39,8 +39,12 @@ We think we can generalize the hidden state as probability. We could see the pro
 
 If a player doesn't follow a suit, the probability that he has a card in the said suit drop to 0. This is a strong assumption as it is part of the game rules. However, we could test "weak" assumption pretending that other players play strategically. For example, they could try to protect a strong card by playing his lowest card if he cannot win the current trick. Assuming this strategy, we could lower the chance that the-said player has a lower card then the one he just played. Those kind of stategy are seen in humain play and seems to be optimal.
 
-
 ## Objective
-Recently, the AEDIROUM (the computer science association) launched a contest to create the best bot of 10... explain more about the contest and that the deadline is by the end of this month. We could try to have a nice rating at this contest as part of the objective of this project
+Recently, the AEDIROUM (the computer science association) launched a contest to create the best bot of 10. The competition is about creating the best bot of the game. Bots submission are gonna play random hand thousands of time to statically mesure the performance. The competition submission deadline is at the end of March. An arbitrer that gives correct hand and let bots play against each other is already made by fellow phD Matteo Delabré, so it will be easy to test our bot and play against it. As a milestone of this project, we want to prove feasability and superiority of dynamic programming by winning the competition.
 
-- Have a modelization that let's us write a program that can beat us two at this game. As we are experienced player, this would prove the accuracy of the DP.
+In order, here what we intend to do:
+- Modelize the simpler version of the game with hidden state.
+- Modelize the complete game with hidden state, trump card, strategy, etc. Without the betting phase.
+- Implement it in a programming language.
+
+Our final goal would be to have a bot that can beat us two at this game. As we are experienced player, this would prove the accuracy of the DP.
