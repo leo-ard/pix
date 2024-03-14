@@ -1,4 +1,4 @@
-# Modelizagtion of the Game of 10 (card game)
+# The Game of 10 (card game)
 The game of 10 is a classic [trick-taking card game](https://en.wikipedia.org/wiki/Trick-taking_game) with trump. The [rules of the game of 10](https://wiki.aediroum.ca/wiki/Jeu_du_10) can be summarize as:
 - Strongest card (ace) win the trick
 - Ace's and 10's are worth 10 points, 5's is worth 5 points
