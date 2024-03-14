@@ -16,8 +16,8 @@ First, let's have some definitions :
 - $D = \\{ 5\heartsuit, 6\heartsuit, ..., K\heartsuit, A\heartsuit, 5\clubsuit, ..., A\clubsuit, ..., A\diamondsuit \\}$ : the deck. This represents all cards that we can have in the game. We have $|D| = 40$.
 - $H_i \subset D, |H_i| = 10$, the hand of player $i$. We can see that we have $H_i \cap H_j = \emptyset ~~\forall i, j \in \{0, 1, 2, 3\}, i \neq j$, in other words, no player has the same cards.
 - $POINTS(c_0, c_1, c_2, c_3)$ : the points that we get if cards $c_0, c_1, c_2, c_3$ are on the table in this order. We are represented by player 0, so $c_0$ would be our card. Note that the points can be negative if we lose the round. 
-- We define u^i_k as the card played by the i^{th} player at stage k
-- We define the state x_k as the card detained by the four players (H_0, H_1, H_2, H_3). The hands are known at the start.
+- We define $u^i_k$ as the card played by the $i^{th}$ player at stage k
+- We define the state $x_k$ as the card detained by the four players $(H_0, H_1, H_2, H_3)$. The hands are known at the start.
 
 With those definition we can see the following Bellman equation:
 
