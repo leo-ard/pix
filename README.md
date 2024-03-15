@@ -24,7 +24,7 @@ With those definition we can see the following Bellman equation:
 $$
 \begin{align}
 J_N(H_0, H_1, H_2, H_3) =& 0\\
-J_k(H_0, H_1, H_2, H_3) =& \max_{u^0_k \in V(H_0)} \min_{[u^i_k \in V(H_i), i \in \\{0,1,2\\}]} \\{ POINTS(u^0_k, u^1_k, u^2_k, u^3_k) + J_{k+1}(H_0 \setminus \\{u^0_k\\}, H_1 \setminus \\{ u^1_k \\}, H_2\setminus \\{ u^2_k \\}, H_3\setminus \\{ u^3_k \\}) \\}
+J_k(H_0, H_1, H_2, H_3) =& \max_{u^0_k \in V(H_0)} \min_{[u^i_k \in V(H_i), i \in \\{1,2,3\\}]} \\{ POINTS(u^0_k, u^1_k, u^2_k, u^3_k) + J_{k+1}(H_0 \setminus \\{u^0_k\\}, H_1 \setminus \\{ u^1_k \\}, H_2\setminus \\{ u^2_k \\}, H_3\setminus \\{ u^3_k \\}) \\}
 \end{align}
 $$
 
