@@ -1,0 +1,6 @@
+P1 = highest, P2 = random, P3=highest, P4 = random - 1000000 games :
+- 5717885 vs 4282115 : P1=3163735 P2=2141145 P3=2554150 P4=2140970 
+
+
+P1 = random, P2 = highest, P3=random, P4 = highest - 1000000 games :
+4701100 vs 5298900 : P1=2544840 P2=2653470 P3=2156260 P4=2645430 

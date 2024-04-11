@@ -1,5 +1,9 @@
 from random import shuffle
+from random import seed
 import random
+import sys
+
+seed(0)
 
 # Create a deck of 40 cards that is shuffled
 def create_deck():
@@ -31,6 +35,7 @@ hearts =   list(map(lambda x: 1 if x[-1] == "H" else 0, one_hot))
 diamonds = list(map(lambda x: 1 if x[-1] == "D" else 0, one_hot))
 clubs =    list(map(lambda x: 1 if x[-1] == "C" else 0, one_hot))
 spades =   list(map(lambda x: 1 if x[-1] == "S" else 0, one_hot))
+all_hand = list(map(lambda _: 1, one_hot))
 
 # Helper function to create a hand from a list of cards
 #  it will use the one hot encoding to create the hand
@@ -124,17 +129,10 @@ def hand_to_list(hand):
             val.append(one_hot[i])
     return val
 
-# Play a card from a hand
-def play_card(hand, asked=False):
-    playable_hand = playable_cards(hand, asked)
-    choice = random.choice(hand_to_list(playable_hand))
-    new_hand = remove_card(hand, choice)
-
-    return new_hand, make_hand(choice)
 
 # Remove a card from a hand
 def remove_card(hand, card):
-    return dot(hand, inv(make_hand(card)))
+    return dot(hand, inv(card))
 
 # Print the board
 def print_board(board):
@@ -142,16 +140,31 @@ def print_board(board):
         print("Player", i+1, ":")
         print_cards(b)
 
-# Compare two cards
-def higher(card1, card2, asked):
+def mask_atout(card1, asked, atout):
     # It works by masking the cards with the asked suit and the "atout"
     mask = asked
-    if hearts != asked:
-        mask = add(mask, hearts)
+    if atout != asked:
+        mask = add(mask, atout)
 
-    # Compare the two vectors. In python, list comparaison will compare element by element
-    # until one value is greater than the other.
-    return dot(card1, mask) > dot(card2, mask)
+    return dot(card1, mask)
+
+def get_highest_any_suite(hand):
+    lowest_v = 40
+    highest_hand = make_hand()
+
+    for suite in [hearts, diamonds, clubs, spades]:
+        hand_masked = dot(hand, suite)
+        if any(hand_masked):
+            v = first(hand_masked) - first(suite)
+            if lowest_v > v:
+                lowest_v = v
+                highest_hand = make_hand(one_hot[first(hand_masked)])
+
+    return highest_hand
+
+# Compare two cards
+def higher(card1, card2, asked, atout):
+    return mask_atout(card1, asked, atout) > mask_atout(card2, asked, atout)
     
 # Print the score of a round
 def print_score(scores):
@@ -170,19 +183,152 @@ def print_round(round, winner, played):
         else:
             print(to_show, end=" ")
     print()
+
+class random_strategy:
+    def __init__(self):
+        pass
+
+    def play_card(self, hand, playable_hand, asked, atout):
+        choice = random.choice(hand_to_list(playable_hand))
+        return make_hand(choice)
+
+    def update_played(self, played):
+        pass
+
+def first(hand):
+    for i, v in enumerate(hand):
+        if v == 1:
+            return i
+    return -1
+
+class highest_strategy:
+    def __init__(self):
+        pass
+
+    def play_card(self, hand, playable_hand, asked, atout):
+        if not atout: # first to play (in the game)
+            return get_highest_any_suite(playable_hand)
+
+        if not asked: # first to play
+            atout_masked = dot(atout, playable_hand)
+            if any(atout_masked):
+                return make_hand(one_hot[first(atout_masked)])
+            else:
+                return get_highest_any_suite(playable_hand)
+
+        masked = mask_atout(playable_hand, asked, atout)
+        index = first(masked)
+        if index != -1:
+            return make_hand(one_hot[index])
+        else:
+            return random_strategy().play_card(hand, playable_hand, asked, atout)
+
+    def update_played(self, played):
+        pass
+
+
+        # choice = sorted(hand_to_list(playable_hand), key=lambda x: mask_atout(make_hand(x), asked, atout))[0]
+        # return make_hand(choice)
+
+from itertools import combinations
+
+def distribute(left):
+    cards = hand_to_list(left)
+    return combinations(cards, len(cards)//3)
+    
+def win_round(c1, c2, c3, c4, asked, atout):
+    cards = [make_hand(x) for x in [c1, c2, c3, c4]]
+    best = 0
+    for i, c in enumerate(cards[1:]):
+        if higher(c, cards[best], asked, atout):
+            best = i
+
+    return best
+
+def node(hand, left,  turn_count, atout):
+    lhand = hand_to_list(hand)
+    lleft = hand_to_list(left)
+
+    if not lhand:
+        return (0, 0)
+
+    U = []
+    for u in lhand:
+        hand_values = []
+        for d in combinations(lleft, 3): # distribution node
+            
+            temp = score(make_hand(u, *d))
+            w1 = (win_round(u, d[0], d[1], d[2], suite(make_hand(u)), atout) % 2) * 2 - 1
+            w2 = (win_round(u, d[1], d[0], d[2], suite(make_hand(u)), atout) % 2) * 2 - 1
+            w3 = (win_round(u, d[0], d[2], d[1], suite(make_hand(u)), atout) % 2) * 2 - 1
+
+            value_of_hand = (w1 + w2 + w3) * temp / 3
+            next_hand = remove_card(hand, make_hand(u))
+            next_left = remove_card(left, make_hand(*d))
+            node_value, u = node(next_hand, next_left, 0, atout)
+            hand_values.append((node_value + value_of_hand, u))
+
+    print(hand_values)
+    return max(hand_values, key=lambda x: x[0])
+
+from time import sleep
+while True:
+    x = hand_to_list(random_cards(4))
+    print(x)
+    print(node(make_hand(x[0]), make_hand(*x[1:]), 0, hearts))
+    sleep(1)
+
+
+
+
+            
+
+            
+
+        
+
+            
+
+            
+            
+
+        
+
+
+class dp_strategy:
+    left = []
+    tree = []
+
+    def __init__(self):
+        self.left = make_hand()
+
+    def play_card(self, hand, playable_hand, asked, atout):
+        
+
+
+        pass
+
+    def update_played(self, played):
+        self.left = remove_card(self.left, played)
+
+
+
     
 
 # Play a game
-def game():
+def game(verbose=True):
 
     # Create a deck and attribute the cards to the players
     deck = create_deck()
     board = attribute_cards(deck)
 
     scores = [0, 0, 0, 0] # Vector containing the score of each player
+    #strategies = [highest_strategy(), random_strategy(), highest_strategy(), random_strategy()]
+    strategies = [random_strategy(), highest_strategy(), random_strategy(), highest_strategy()]
     winner = 0 # The winner of the round
     
-    print_board(board)
+    if verbose: print_board(board)
+    atout = False
 
     for i in range(10):
         asked = False # The asked suit
@@ -200,36 +346,61 @@ def game():
             # Hand of the current player
             hand = board[current]
             # Play a card, remove it from the hand of the player and get the played cards
-            board[current], card = play_card(hand, asked)
-            print("Player", current+1, ":", hand_to_list(card)[0])
+            playable_hand = playable_cards(hand, asked)
+            card = strategies[current].play_card(hand, playable_hand, asked, atout)
+
+            if not any(dot(card, playable_hand)) or card.count(1) != 1 or len(card) != 40:
+                print("Player", current+1, "cheated")
+                raise Exception("Player cheated", card)
+                
+            board[current] = remove_card(hand, card)
+
+
+            if verbose: print("Player", current+1, ":", hand_to_list(card)[0])
 
             # Modify the currently asked suite
             if not asked:
                 asked = suite(card)
 
+            if not atout:
+                atout = asked
+
             # Update the played cards
             played = add(played, card)
-            played_display[current] = hand_to_list(card)[0]
+            if verbose: played_display[current] = hand_to_list(card)[0]
 
             # Update the played cards and the highest card
-            if higher(card, highest_card, asked):
+            if higher(card, highest_card, asked, atout):
                 highest_card = card
                 new_winner = current
             
         # Update the winner and the score
         winner = new_winner
-        current_score = score(played)
+        #current_score = score(played)
         scores[winner] += score(played)
-        print_round(i+1, winner, played_display)
+        for i in range(4):
+            strategies[i].update_played(played)
+        if verbose: print_round(i+1, winner, played_display)
     #print_score(scores)
     return scores
 
+#v = True
+v = True
 
-
-game()
-
+if v:
+    score = game()
+    print_score(score)
+else:
 # Compute the score of 100000 games            
-#total_score = [0, 0, 0, 0]
-#for _ in range(100000):
-#    total_score = add(game(), total_score)
-#print_score(total_score)
+#for _ in range(10):
+    total_score = [0, 0, 0, 0]
+    atteinged = 10
+    for i in range(100000):
+        if i == atteinged:
+            print(f"Computing game {i}")
+            sys.stdout.flush()
+            atteinged *= 10
+        total_score = add(game(verbose=False), total_score)
+    print_score(total_score)
+
+
