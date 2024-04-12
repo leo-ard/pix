@@ -1,9 +1,10 @@
 from random import shuffle
 from random import seed
 import random
+from collections import defaultdict
 import sys
 
-seed(0)
+seed(3)
 
 # Create a deck of 40 cards that is shuffled
 def create_deck():
@@ -236,8 +237,8 @@ def distribute(left):
     cards = hand_to_list(left)
     return combinations(cards, len(cards)//3)
     
-def win_round(c1, c2, c3, c4, asked, atout):
-    cards = [make_hand(x) for x in [c1, c2, c3, c4]]
+def win_round(cards, asked, atout):
+    cards = [make_hand(x) for x in cards] 
     best = 0
     for i, c in enumerate(cards[1:]):
         if higher(c, cards[best], asked, atout):
@@ -245,40 +246,62 @@ def win_round(c1, c2, c3, c4, asked, atout):
 
     return best
 
+def as_number(hand):
+    return sum([x*2**i for i, x in enumerate(hand)])
+
+x = defaultdict(lambda: defaultdict(lambda: False))
+
 def node(hand, left,  turn_count, atout):
+    global x
+    memoi = x[as_number(hand)][as_number(left)]
+    if memoi:
+        return memoi
+
     lhand = hand_to_list(hand)
     lleft = hand_to_list(left)
 
-    if not lhand:
-        return (0, 0)
+    if lhand == [] or score(left) == 0:
+        return (0, [], [])
 
-    U = []
+    hand_values = []
     for u in lhand:
-        hand_values = []
+        combination_values = []
         for d in combinations(lleft, 3): # distribution node
+            value_of_hand = 0
+            move = 0
+            dd = 0
+            for p2 in range(len(d)):
+                p1 = (p2+1) % 3
+                p3 = (p2+2) % 3
+                card_played = [u, d[p1], d[p2], d[p3]]
+
+                temp = score(make_hand(*card_played))
+                win = win_round(card_played, suite(make_hand(u)), atout)
+                current_hand_value = temp if win%2 == 0 else -temp
+
+                next_hand = remove_card(hand, make_hand(u))
+                next_left = remove_card(left, make_hand(*d))
+                node_value, move, dd = node(next_hand, next_left, win, atout)
+                value_of_hand += current_hand_value + node_value
             
-            temp = score(make_hand(u, *d))
-            w1 = (win_round(u, d[0], d[1], d[2], suite(make_hand(u)), atout) % 2) * 2 - 1
-            w2 = (win_round(u, d[1], d[0], d[2], suite(make_hand(u)), atout) % 2) * 2 - 1
-            w3 = (win_round(u, d[0], d[2], d[1], suite(make_hand(u)), atout) % 2) * 2 - 1
+            combination_values.append((value_of_hand / 3, move, [d] + dd))
 
-            value_of_hand = (w1 + w2 + w3) * temp / 3
-            next_hand = remove_card(hand, make_hand(u))
-            next_left = remove_card(left, make_hand(*d))
-            node_value, u = node(next_hand, next_left, 0, atout)
-            hand_values.append((node_value + value_of_hand, u))
+        min_value = min(combination_values, key=lambda x : x[0])
+        hand_values.append((min_value[0], [u] + move, min_value[2]))
 
-    print(hand_values)
-    return max(hand_values, key=lambda x: x[0])
+    val = max(hand_values, key=lambda x: x[0])
+    x[as_number(hand)][as_number(left)] = val
+    return val
 
 from time import sleep
-while True:
-    x = hand_to_list(random_cards(4))
-    print(x)
-    print(node(make_hand(x[0]), make_hand(*x[1:]), 0, hearts))
-    sleep(1)
+#while True:
+#u = ["10C", "9H", "JH", "AD"]
+#unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "AH", "8D", "5D","QS", "QD", "QH"]
+u = ["10C", "9H", "AH"]
+unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "QH", "8D", "5D"]
+print(node(make_hand(*u), make_hand(*unknown), 0, hearts))
 
-
+exit(0)
 
 
             
