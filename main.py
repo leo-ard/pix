@@ -62,6 +62,10 @@ def scale(s, a):
 def add(a, b):
     return [x+y for x,y in zip(a,b)]
 
+
+def add_cap(a, b):
+    return [min(x+y, 1) for x,y in zip(a,b)]
+
 # add multiple vectors together
 def madd(*args):
     if len(args) == 1:
@@ -240,7 +244,7 @@ def distribute(left):
 def win_round(cards, asked, atout):
     cards = [make_hand(x) for x in cards] 
     best = 0
-    for i, c in enumerate(cards[1:]):
+    for i, c in enumerate(cards):
         if higher(c, cards[best], asked, atout):
             best = i
 
@@ -249,57 +253,200 @@ def win_round(cards, asked, atout):
 def as_number(hand):
     return sum([x*2**i for i, x in enumerate(hand)])
 
-x = defaultdict(lambda: defaultdict(lambda: False))
+memoi_dict = defaultdict( 
+        lambda: defaultdict(
+            lambda: defaultdict( 
+                lambda : defaultdict(
+                    lambda : defaultdict(int)
+                    ))))
 
-def node(hand, left,  turn_count, atout):
-    global x
-    memoi = x[as_number(hand)][as_number(left)]
-    if memoi:
-        return memoi
+valll = 0
 
-    lhand = hand_to_list(hand)
-    lleft = hand_to_list(left)
+def get_memoi(deck, start_player):
+    global memoi_dict
 
-    if lhand == [] or score(left) == 0:
+    return memoi_dict[as_number(deck[0])][as_number(deck[1])][as_number(deck[2])][as_number(deck[3])][start_player]
+
+def set_memoi(deck, start_player, value):
+    global memoi_dict
+    memoi_dict[as_number(deck[0])][as_number(deck[1])][as_number(deck[2])][as_number(deck[3])][start_player] = value
+
+memoi_hit = 0
+def iter_without(card, deck, n):
+    return hand_to_list(remove_card(deck[n], card))
+
+# Pruning par pignonier
+def pignonier_valid(next_deck, card_per_player):
+    # par pignonier, si une couleur est demandé et qu'il ne fournit pas, alors 
+    #  il doit avoir plus de cartes d'une autre couleur que de tour restant dans la partie
+
+    combined = make_hand()
+    for i in range(4):
+        combined = add_cap(combined, next_deck[i])
+        if next_deck[i].count(1) < card_per_player-1: 
+            return False
+
+    for i in range(3):
+        comb = add_cap(next_deck[1 + i%3], next_deck[1 + (i+1)%3])
+        if comb.count(1) < 2 * (card_per_player - 1):
+            return False
+
+    if combined.count(1) < 4 * (card_per_player - 1):
+        return False
+
+    return True
+
+compteur = 0
+
+def node2(deck, start_player, atout):
+    global memoi_hit, compteur
+    compteur +=1 
+    v = get_memoi(deck, start_player)
+    if v: 
+        memoi_hit+=1
+        #if memoi_hit % 1000 == 0:
+        #    print("Memoi hit", memoi_hit)
+        #print(len(ddeck[0]), start_player)
+        return v
+
+
+    ddeck = list(map(hand_to_list, deck))
+    card_per_player = len(ddeck[0])
+    if card_per_player == 0:
         return (0, [], [])
 
-    hand_values = []
-    for u in lhand:
-        combination_values = []
-        for d in combinations(lleft, 3): # distribution node
-            value_of_hand = 0
-            move = 0
-            dd = 0
-            for p2 in range(len(d)):
-                p1 = (p2+1) % 3
-                p3 = (p2+2) % 3
-                card_played = [u, d[p1], d[p2], d[p3]]
+    c = 0
+    U = []
+    for u in ddeck[0]:
+        possibilities = []
+        for p2 in iter_without(make_hand(u), deck, 1):
+            for p3 in iter_without(make_hand(u, p2), deck, 2):
+                for p4 in iter_without(make_hand(u, p2, p3), deck, 3):
+                    table = [u, p2, p3, p4]
+                    hand_table = make_hand(*table)
 
-                temp = score(make_hand(*card_played))
-                win = win_round(card_played, suite(make_hand(u)), atout)
-                current_hand_value = temp if win%2 == 0 else -temp
+                    asked = suite(make_hand(table[start_player]))
+                    next_deck = [0] * 4
+                    for i in range(4):
+                        fournis = any(dot(asked, make_hand(table[i]))) # S'il a fournit la couleur demandé
+                        if not fournis:
+                            next_deck[i] = remove_card(deck[i], add_cap(hand_table, asked))
+                        else:
+                            next_deck[i] = remove_card(deck[i], hand_table)
 
-                next_hand = remove_card(hand, make_hand(u))
-                next_left = remove_card(left, make_hand(*d))
-                node_value, move, dd = node(next_hand, next_left, win, atout)
-                value_of_hand += current_hand_value + node_value
-            
-            combination_values.append((value_of_hand / 3, move, [d] + dd))
+                    if not pignonier_valid(next_deck, card_per_player):
+                        continue
+                    
+                    
+                    winner = win_round(table, asked, atout)
+                    #winner = (start_player + relative_winner) % 4
+                    
+                    s = score(hand_table)
+                    current_score = s if winner%2 == 0 else -s
+                    if card_per_player == 1:
+                        possibilities.append((current_score, [u], [table, current_score, winner]))
+                    else:
+                        (future_score, action, future_table) = node2(next_deck, winner, atout)
+                        possibilities.append((current_score + future_score, [u] + action, [table, current_score + future_score, winner] + future_table))
 
-        min_value = min(combination_values, key=lambda x : x[0])
-        hand_values.append((min_value[0], [u] + move, min_value[2]))
+                    c += 1
+        if possibilities != []:
+            U.append(min(possibilities, key=lambda x: x[0]))
 
-    val = max(hand_values, key=lambda x: x[0])
-    x[as_number(hand)][as_number(left)] = val
-    return val
+    # This can happend if we enter an invalid state
+    if U == []:
+        print("invalid")
+        return (10000, ["INVALID"], [])
 
-from time import sleep
+    action_to_take = max(U, key=lambda x: x[0])
+
+    set_memoi(deck, start_player, action_to_take)
+    return action_to_take
+
+
+u = ["AS", "AC", "AH"]
+unknown = ["JC", "10C", "8H", "7D", "5C", "JH", "8C", "5D", "QC"]
+
+p1 = make_hand(*u)
+p2 = make_hand(*unknown)
+p3 = make_hand(*unknown)
+p4 = make_hand(*unknown)
+
+print(node2([p1, p2, p3, p4], 0, hearts))
+print(compteur)
+#p1 = make_hand("10C", "9H")
+##unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "QH", "8D", "5D"]
+#p2 = make_hand("JC", "10H", "8H", "7H", "5C", "AS")
+#p3 = make_hand("JC", "10H", "8H", "7H", "5C", "AS")
+#p4 = make_hand("JC", "10H", "8H", "7H", "5C", "AS")
+
+#p1 = make_hand("AH", "10H")
+#p2 = make_hand("QH", "JH", "9H", "8H", "7H", "6H")
+#p3 = make_hand("QH", "JH", "9H", "8H", "7H", "6H")
+#p4 = make_hand("QH", "JH", "9H", "8H", "7H", "6H")
+
+
+
+        
+
+    
+    
+    
+
+
+
+        # def node(hand, left,  turn_count, atout):
+        #     global x, valll
+        #     memoi = x[as_number(hand)][as_number(left)]
+        #     if memoi:
+        #         return memoi
+        # 
+        #     valll += 1
+        # 
+        #     lhand = hand_to_list(hand)
+        #     lleft = hand_to_list(left)
+        # 
+        #     if lhand == [] or score(left) == 0:
+        #         return (0, [], [])
+        # 
+        #     hand_values = []
+        #     for u in lhand:
+        #         combination_values = []
+        #         for d in combinations(lleft, 3): # distribution node
+        #             value_of_hand = 0
+        #             move = 0
+        #             dd = 0
+        #             for p2 in range(len(d)):
+        #                 p1 = (p2+1) % 3
+        #                 p3 = (p2+2) % 3
+        #                 card_played = [u, d[p1], d[p2], d[p3]]
+        # 
+        #                 temp = score(make_hand(*card_played))
+        #                 win = win_round(card_played, suite(make_hand(u)), atout)
+        #                 current_hand_value = temp if win%2 == 0 else -temp
+        # 
+        #                 next_hand = remove_card(hand, make_hand(u))
+        #                 next_left = remove_card(left, make_hand(*d))
+        #                 node_value, move, dd = node(next_hand, next_left, win, atout)
+        #                 value_of_hand += current_hand_value + node_value
+        #             
+        #             combination_values.append((value_of_hand / 3, move, [d] + dd))
+        # 
+        #         min_value = min(combination_values, key=lambda x : x[0])
+        #         hand_values.append((min_value[0], [u] + move, min_value[2]))
+        # 
+        #     val = max(hand_values, key=lambda x: x[0])
+        #     x[as_number(hand)][as_number(left)] = val
+        #     return val
+
+#from time import sleep
 #while True:
 #u = ["10C", "9H", "JH", "AD"]
 #unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "AH", "8D", "5D","QS", "QD", "QH"]
-u = ["10C", "9H", "AH"]
-unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "QH", "8D", "5D"]
-print(node(make_hand(*u), make_hand(*unknown), 0, hearts))
+#u = ["10C", "9H", "AH"]
+#unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "QH", "8D", "5D"]
+#print(node(make_hand(*u), make_hand(*unknown), 0, hearts))
+#print(valll)
 
 exit(0)
 
