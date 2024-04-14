@@ -3,8 +3,9 @@ from random import seed
 import random
 from collections import defaultdict
 import sys
+import statistics
 
-#seed(3)
+# ==== UTILS ====
 
 # Create a deck of 40 cards that is shuffled
 def create_deck():
@@ -63,6 +64,7 @@ def add(a, b):
     return [x+y for x,y in zip(a,b)]
 
 
+# Like add, but we have a cap
 def add_cap(a, b):
     return [min(x+y, 1) for x,y in zip(a,b)]
 
@@ -73,7 +75,7 @@ def madd(*args):
     else:
         return add(args[0], madd(*args[1:]))
 
-# Precalculate points for each turn
+# Precalculate points for each card
 points = add(scale(5, make_hand("5H", "5D", "5C", "5S")), 
              scale(10, make_hand("10H", "10D", "10C", "10S", "AH", "AD", "AC", "AS")))
 
@@ -134,6 +136,12 @@ def hand_to_list(hand):
             val.append(one_hot[i])
     return val
 
+# Returns the first card in the hand, starting from the left
+def first(hand):
+    for i, v in enumerate(hand):
+        if v == 1:
+            return i
+    return -1
 
 # Remove a card from a hand
 def remove_card(hand, card):
@@ -153,6 +161,7 @@ def mask_atout(card1, asked, atout):
 
     return dot(card1, mask)
 
+# Helper function to get the highest card of any suite
 def get_highest_any_suite(hand):
     lowest_v = 40
     highest_hand = make_hand()
@@ -170,6 +179,20 @@ def get_highest_any_suite(hand):
 # Compare two cards
 def higher(card1, card2, asked, atout):
     return mask_atout(card1, asked, atout) > mask_atout(card2, asked, atout)
+
+# Tells if a table of cards wins or not
+def win_round(cards, asked, atout):
+    cards = [make_hand(x) for x in cards] 
+    best = 0
+    for i, c in enumerate(cards):
+        if higher(c, cards[best], asked, atout):
+            best = i
+
+    return best
+
+# Transform a hand to a number (for hashing)
+def as_number(hand):
+    return sum([x*2**i for i, x in enumerate(hand)])
     
 # Print the score of a round
 def print_score(scores):
@@ -189,6 +212,9 @@ def print_round(round, winner, played):
             print(to_show, end=" ")
     print()
 
+# ==== STRATEGIES ====
+
+# Strategy that plays a random card among the ones that it has
 class random_strategy:
     def __init__(self):
         pass
@@ -200,12 +226,7 @@ class random_strategy:
     def update_played(self, played, asked, a):
         pass
 
-def first(hand):
-    for i, v in enumerate(hand):
-        if v == 1:
-            return i
-    return -1
-
+# Strategy that plays the highest card of any suite
 class highest_strategy:
     def __init__(self):
         pass
@@ -232,9 +253,7 @@ class highest_strategy:
         pass
 
 
-        # choice = sorted(hand_to_list(playable_hand), key=lambda x: mask_atout(make_hand(x), asked, atout))[0]
-        # return make_hand(choice)
-
+# The interesting strategy
 class dp_strategy:
 
     left = [] 
@@ -250,6 +269,7 @@ class dp_strategy:
         
 
     def play_card(self, hand, playable_hand, asked, atout, winner, played_display, current):
+        # Play the card according to the dp strategy
 
         if not asked:
             asked = all_hand
@@ -257,6 +277,7 @@ class dp_strategy:
         if not atout:
             atout = all_hand
 
+        # The first time we play the card, we initialize the cards left (that other players have)
         if self.current_turn == 10:
             self.left = [hand, remove_card(all_hand, hand), remove_card(all_hand, hand), remove_card(all_hand, hand)]
 
@@ -264,19 +285,22 @@ class dp_strategy:
         if self.current_turn > self.turn_kick_in:
             card_to_play = random_strategy().play_card(hand, playable_hand, asked, atout, winner, played_display, current)
         else:
+            # Deck to tell the algorithm what cards are left to play
             iter_deck = [
                 playable_hand,
                 all_hand if played_display[(current+1)%4] == "" else make_hand(played_display[(current+1)%4]),
                 all_hand if played_display[(current+2)%4] == "" else make_hand(played_display[(current+2)%4]),
                 all_hand if played_display[(current+3)%4] == "" else make_hand(played_display[(current+3)%4]),
             ]
+
+            # Shortcut if we have only one playable card
             if len(hand_to_list(playable_hand)) == 1:
                 card_to_play = make_hand(hand_to_list(playable_hand)[0])
             else:
                 depth = 1 if self.current_turn > 3 else 3
             
-                #print("foobar", depth, self.current_turn)
-                score, action, _ = node2(self.left, (current-winner) % 4, atout, depth, self.current_turn, force=iter_deck, heuristic=self.heuristic, aggregate=self.aggregator)
+                # Call to the actual dp algorithm
+                score, action, _ = dp_algorithm(self.left, (current-winner) % 4, atout, depth, self.current_turn, force=iter_deck, heuristic=self.heuristic, aggregate=self.aggregator)
                 card_to_play = make_hand(action)
 
         self.current_turn -= 1
@@ -284,68 +308,44 @@ class dp_strategy:
         
 
     def update_played(self, table, asked, current):
+        # Update the beleif state according to what the other players played
         deck = self.left
         next_deck = [0] * 4
         hand_table = make_hand(*table)
         for i in range(4):
             current_i = (current + i) % 4
             fournis = any(dot(asked, make_hand(table[current_i]))) # S'il a fournit la couleur demandé
-            #fournis = True
             if not fournis:
                 next_deck[i] = remove_card(deck[i], add_cap(hand_table, asked))
             else:
                 next_deck[i] = remove_card(deck[i], hand_table)
-        #next_deck[0] = remove_card(self.left[0], make_hand(table[current]))
         self.left = next_deck
         
 
-from itertools import combinations
 
-def distribute(left):
-    cards = hand_to_list(left)
-    return combinations(cards, len(cards)//3)
-    
-def win_round(cards, asked, atout):
-    cards = [make_hand(x) for x in cards] 
-    best = 0
-    for i, c in enumerate(cards):
-        if higher(c, cards[best], asked, atout):
-            best = i
+# ==== DP ALGORITHM ====
 
-    return best
-
-def as_number(hand):
-    return sum([x*2**i for i, x in enumerate(hand)])
-
-memoi_dict = defaultdict( 
-        lambda: defaultdict(
-            lambda: defaultdict( 
-                lambda : defaultdict(
-                    lambda : defaultdict(int)
-                    ))))
-
-memoi_dict2 = defaultdict(lambda : False)
-
-valll = 0
+# memoization implementation
+memoi_dict = defaultdict(lambda : False)
 
 def get_memoi(deck, start_player):
-    global memoi_dict2
+    global memoi_dict
     key = (*list(map(as_number, deck)), start_player)
 
-    return memoi_dict2[key]#memoi_dict[as_number(deck[0])][as_number(deck[1])][as_number(deck[2])][as_number(deck[3])][start_player]
+    return memoi_dict[key]#memoi_dict[as_number(deck[0])][as_number(deck[1])][as_number(deck[2])][as_number(deck[3])][start_player]
 
 def set_memoi(deck, start_player, value):
-    global memoi_dict2
+    global memoi_dict
     key = (*list(map(as_number, deck)), start_player)
-    memoi_dict2[key] = value
+    memoi_dict[key] = value
     #memoi_dict[as_number(deck[0])][as_number(deck[1])][as_number(deck[2])][as_number(deck[3])][start_player] = value
 
 
-memoi_hit = 0
+# Helper function for DP algorithm
 def iter_without(card, deck, n):
     return hand_to_list(remove_card(deck[n], card))
 
-# Pruning par pignonier
+# Pruning par pigonier
 def pignonier_valid(next_deck, card_per_player):
     # par pignonier, si une couleur est demandé et qu'il ne fournit pas, alors 
     #  il doit avoir plus de cartes d'une autre couleur que de tour restant dans la partie
@@ -366,17 +366,7 @@ def pignonier_valid(next_deck, card_per_player):
 
     return True
 
-import math
-def prob(n, table, deck, player, asked):
-    c = make_hand(table[player])
-    b = deck[player].count(1)
-    if any(dot(c, asked)):
-        return math.comb(b-1, n-1) / (math.comb(b, n) * n)
-    else:
-        k = dot(deck[player], asked).count(1)
-        return math.comb(b-k, n) / (math.comb(b, n) * n)
-
-compteur = 0
+# AGREGATORS
 
 def utility(v):
     if v < 0:
@@ -384,7 +374,19 @@ def utility(v):
     else:
         return v
 
-# number of cards in hand
+def min_utility(values):
+    return min(map(utility, values))
+
+def gen_cutoff_agregator(cutoff):
+
+    def cutoff_aggregator(lst):
+        sorted_lst = sorted(lst)
+        index = int(len(lst) * cutoff)
+        return sorted_lst[index]
+
+    return cutoff_aggregator
+
+# HEURISTIQUES
 def hand_heuristic(deck, start_player, atout):
     return score(deck[0])
 
@@ -439,56 +441,48 @@ def best_card_win_heuristique(H, start_player, atout):
 
 
 
-import statistics
-def node2(
-    deck, 
-    start_player, 
-    atout, 
-    count_to_heuristic, 
-    card_per_player, 
-    force=[all_hand] * 4, 
-    heuristic=gen_future_heuristic(0.4),
-    aggregate=statistics.mean
+# The dp algorithm
+def dp_algorithm(
+    deck,                                # The current deck. deck[0] is the hand of the player that is playing 
+    start_player,                        # The player that plays first
+    atout,                               # The atout as a hand
+    count_to_heuristic,                  # The number of turns to look in the future before running the heuristic
+    card_per_player,                     # The number of cards per player
+    force=[all_hand] * 4,                # The cards that have been played this round 
+    heuristic=gen_future_heuristic(0.4), # The heuristic to use
+    aggregate=statistics.mean            # The aggregator to use
     ):
+
+    
     if count_to_heuristic == 0:
+        # Our base case is the heuristic
         return (heuristic(deck, start_player, atout), [], [])
 
-    global memoi_hit, compteur
-    compteur +=1 
+    # Check for memoization
     v = get_memoi(deck, start_player)
     if v: 
-        memoi_hit+=1
-        #if memoi_hit % 1000 == 0:
-        #    print("Memoi hit", memoi_hit)
-        #print(len(ddeck[0]), start_player)
         return v
 
+    # The cards to iterate over
     iter_deck = [dot(deck[i], force[i]) for i in range(4)]
 
-
+    # The deck as a list of cards (string)
     ddeck = list(map(hand_to_list, iter_deck))
-    #card_per_player = len(ddeck[0])
-    #if card_per_player == 0:
-    #    return (0, [], [])
 
-    c = 0
-    U = []
+
+    U = [] # Set of possible actions
     for u in ddeck[0]:
-        possibilities = []
-        #probas = []
-        #value = 0
-        #meta_prob = 0
-        #total_mean = 0
-        #total_elem = 0
-        #print("start")
+        possibilities = [] # All possibilities for the current action
 
         for p2 in iter_without(make_hand(u), iter_deck, 1):
             for p3 in iter_without(make_hand(u, p2), iter_deck, 2):
                 for p4 in iter_without(make_hand(u, p2, p3), iter_deck, 3):
+
+                    # Current table of cards to test
                     table = [u, p2, p3, p4]
-                    #print(table)
                     hand_table = make_hand(*table)
 
+                    # Create the next deck with the next beleif
                     asked = suite(make_hand(table[start_player]))
                     next_deck = [0] * 4
                     for i in range(1, 4):
@@ -498,189 +492,45 @@ def node2(
                             next_deck[i] = remove_card(deck[i], add_cap(hand_table, asked))
                         else:
                             next_deck[i] = remove_card(deck[i], hand_table)
+
                     next_deck[0] = remove_card(deck[0], hand_table)
 
-                    #proba = 1
-                    #for p in range(1, 4):
-                    #    proba *= prob(card_per_player, table, deck, p, asked)
-
-                    #print(table, proba)
-
-                    #meta_prob += proba
+                    
+                    # Check if the new deck is valid
                     if not pignonier_valid(next_deck, card_per_player - 1):
                         continue
                     
                     
+                    # Calculate the score of the current round
                     winner = win_round(table, asked, atout)
-                    #winner = (start_player + relative_winner) % 4
-                    
                     s = score(hand_table)
                     current_score = s if winner%2 == 0 else -s
                     
-                    #total_elem += 1
+                    # Call the dp algorithm recursively
                     if card_per_player-1 == 1:
-                        #value += current_score * proba
                         possibilities.append(current_score)
-                        #total_mean += utility(current_score)
                     else:
-                        (future_score, action, future_table) = node2(next_deck, winner, atout, count_to_heuristic - 1, card_per_player-1, heuristic=heuristic, aggregate=aggregate)
-                        #value += (current_score + future_score) * proba
+                        (future_score, action, future_table) = dp_algorithm(next_deck, winner, atout, count_to_heuristic - 1, card_per_player-1, heuristic=heuristic, aggregate=aggregate)
                         possibilities.append(current_score + future_score)
-                        #total_mean += utility(current_score + future_score)
 
-                    c += 1
-        #print(meta_prob)
-        #print("meta", meta_prob)
-        #exit(1)
-        #if meta_prob != 0 or meta_prob != 1:
-        #    pass
-        #U.append((value, u, []))
+        # Aggregate the possibilities
         if possibilities != []:
             U.append((aggregate(possibilities), u, []))
-        else:
-            pass
-        #if possibilities != []:
-        #    U.append(min(possibilities, key=lambda x: x[0]))
 
     # This can happend if we enter an invalid state
     if U == []:
-        print("invalid")
-        print(force)
-        print(deck)
-        print(iter_deck)
         return (0, ["INVALID"], [])
 
+    # The action to take is the maximum of all possible actions
     action_to_take = max(U, key=lambda x: x[0])
 
+    # Set memoization before returning
     set_memoi(deck, start_player, action_to_take)
     return action_to_take
 
 
 
-#d = create_deck()
-#board = attribute_cards(d)
-# u = ["AS", "AC", "AH", "AD"]
-# unknown = ["JC", "10C", "8H", "7D", "5C", "JH", "8C", "5D", "QC", "QD", "QH", "QS"]
-# #u = board[0]
-# #unknown = add_cap(add_cap(board[1], board[2]), board[3])
-# 
-# p1 = make_hand(*u)
-# p2 = make_hand(*unknown)
-# p3 = make_hand(*unknown)
-# p4 = make_hand(*unknown)
-# 
-# print(node2([p1, p2, p3, p4], 0, hearts, 2))
-# print(compteur)
-#p1 = make_hand("10C", "9H")
-##unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "QH", "8D", "5D"]
-#p2 = make_hand("JC", "10H", "8H", "7H", "5C", "AS")
-#p3 = make_hand("JC", "10H", "8H", "7H", "5C", "AS")
-#p4 = make_hand("JC", "10H", "8H", "7H", "5C", "AS")
-
-#p1 = make_hand("AH", "10H")
-#p2 = make_hand("QH", "JH", "9H", "8H", "7H", "6H")
-#p3 = make_hand("QH", "JH", "9H", "8H", "7H", "6H")
-#p4 = make_hand("QH", "JH", "9H", "8H", "7H", "6H")
-
-
-
-        
-
-    
-    
-    
-
-
-
-        # def node(hand, left,  turn_count, atout):
-        #     global x, valll
-        #     memoi = x[as_number(hand)][as_number(left)]
-        #     if memoi:
-        #         return memoi
-        # 
-        #     valll += 1
-        # 
-        #     lhand = hand_to_list(hand)
-        #     lleft = hand_to_list(left)
-        # 
-        #     if lhand == [] or score(left) == 0:
-        #         return (0, [], [])
-        # 
-        #     hand_values = []
-        #     for u in lhand:
-        #         combination_values = []
-        #         for d in combinations(lleft, 3): # distribution node
-        #             value_of_hand = 0
-        #             move = 0
-        #             dd = 0
-        #             for p2 in range(len(d)):
-        #                 p1 = (p2+1) % 3
-        #                 p3 = (p2+2) % 3
-        #                 card_played = [u, d[p1], d[p2], d[p3]]
-        # 
-        #                 temp = score(make_hand(*card_played))
-        #                 win = win_round(card_played, suite(make_hand(u)), atout)
-        #                 current_hand_value = temp if win%2 == 0 else -temp
-        # 
-        #                 next_hand = remove_card(hand, make_hand(u))
-        #                 next_left = remove_card(left, make_hand(*d))
-        #                 node_value, move, dd = node(next_hand, next_left, win, atout)
-        #                 value_of_hand += current_hand_value + node_value
-        #             
-        #             combination_values.append((value_of_hand / 3, move, [d] + dd))
-        # 
-        #         min_value = min(combination_values, key=lambda x : x[0])
-        #         hand_values.append((min_value[0], [u] + move, min_value[2]))
-        # 
-        #     val = max(hand_values, key=lambda x: x[0])
-        #     x[as_number(hand)][as_number(left)] = val
-        #     return val
-
-#from time import sleep
-#while True:
-#u = ["10C", "9H", "JH", "AD"]
-#unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "AH", "8D", "5D","QS", "QD", "QH"]
-#u = ["10C", "9H", "AH"]
-#unknown = ["JC", "10H", "8H", "7H", "5C", "AS", "QH", "8D", "5D"]
-#print(node(make_hand(*u), make_hand(*unknown), 0, hearts))
-#print(valll)
-
-#exit(0)
-
-
-            
-
-            
-
-        
-
-            
-
-            
-            
-
-        
-
-
-# class dp_strategy:
-#     left = []
-#     tree = []
-# 
-#     def __init__(self):
-#         self.left = make_hand()
-# 
-#     def play_card(self, hand, playable_hand, asked, atout):
-#         
-# 
-# 
-#         pass
-# 
-#     def update_played(self, played):
-#         self.left = remove_card(self.left, played)
-
-
-
-    
+# ==== GAME SIMULATION IMPLEMENTATION ====
 
 # Play a game
 def game(verbose=True, strategies = [random_strategy(),  random_strategy(), random_strategy(), random_strategy()]):
@@ -749,36 +599,22 @@ def game(verbose=True, strategies = [random_strategy(),  random_strategy(), rand
     #print_score(scores)
     return scores
 
-def min_utility(values):
-    return min(map(utility, values))
-
-def gen_cutoff_agregator(cutoff):
-
-    def cutoff_aggregator(lst):
-        sorted_lst = sorted(lst)
-        index = int(len(lst) * cutoff)
-        return sorted_lst[index]
-
-    return cutoff_aggregator
 
 
+# ==== MAIN ====
+run_single = False
 
-#v = True
-v = False
-import sys
-
-if v:
-    score = game(verbose=True, 
-               strategies=[
-                   dp_strategy(5, rollout_heuristique, statistics.mean),
+if run_single:
+    score = game(verbose=True, strategies=[
+                   dp_strategy(5, best_card_win_heuristique, statistics.mean),
                    random_strategy(), 
-                   dp_strategy(5, rollout_heuristique, statistics.mean), 
+                   dp_strategy(5, best_card_win_heuristique, statistics.mean), 
                    random_strategy()
                ])
     print_score(score)
 else:
-    #total_score = [0, 0, 0, 0]
-    #atteinged = 10
+    
+    # Testing all hypothesis
     for heuristic in [
         ("future (0.4)", gen_future_heuristic(0.4)), 
         ("future (0.6)", gen_future_heuristic(0.6)),
