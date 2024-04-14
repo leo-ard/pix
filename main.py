@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 import sys
 
-seed(3)
+#seed(3)
 
 # Create a deck of 40 cards that is shuffled
 def create_deck():
@@ -226,7 +226,7 @@ class highest_strategy:
         if index != -1:
             return make_hand(one_hot[index])
         else:
-            return random_strategy().play_card(hand, playable_hand, asked, atout)
+            return random_strategy().play_card(hand, playable_hand, asked, atout, a, b, c)
 
     def update_played(self, played, asked, a):
         pass
@@ -241,10 +241,12 @@ class dp_strategy:
     turn_kick_in = 0
     current_turn = 0
 
-    def __init__(self, turn_kick_in):
+    def __init__(self, turn_kick_in, heuristic, aggregator):
         self.left = []
         self.turn_kick_in = turn_kick_in
         self.current_turn = 10
+        self.heuristic = heuristic
+        self.aggregator = aggregator
         
 
     def play_card(self, hand, playable_hand, asked, atout, winner, played_display, current):
@@ -271,10 +273,10 @@ class dp_strategy:
             if len(hand_to_list(playable_hand)) == 1:
                 card_to_play = make_hand(hand_to_list(playable_hand)[0])
             else:
-                depth = 1 if self.current_turn > 3 else 2
+                depth = 1 if self.current_turn > 3 else 3
             
                 #print("foobar", depth, self.current_turn)
-                score, action, _ = node2(self.left, (current-winner) % 4, atout, depth, self.current_turn, force=iter_deck)
+                score, action, _ = node2(self.left, (current-winner) % 4, atout, depth, self.current_turn, force=iter_deck, heuristic=self.heuristic, aggregate=self.aggregator)
                 card_to_play = make_hand(action)
 
         self.current_turn -= 1
@@ -386,9 +388,58 @@ def utility(v):
 def hand_heuristic(deck, start_player, atout):
     return score(deck[0])
 
-def future_heuristic(deck, start_player, atout):
-    return score(add_cap(add_cap(add_cap(deck[0], deck[1]), deck[2]), deck[3])) * 0.4
+def gen_future_heuristic(ratio):
+    def future_heuristic(deck, start_player, atout):
+        return score(add_cap(add_cap(add_cap(deck[0], deck[1]), deck[2]), deck[3])) * ratio
+    
+    return future_heuristic
 
+def best_card_win_heuristique(H, start_player, atout):
+
+    suit_points = [ 0 for _ in range(4) ]
+    for i in range(4):
+        if any( hand[0+10*i] for hand in H ) : suit_points[i] += 5
+        if any( hand[5+10*i] for hand in H ) : suit_points[i] += 10
+        if any( hand[9+10*i] for hand in H ) : suit_points[i] += 10
+
+    us_point = 0
+    them_point = 0
+    i = 0
+    while i < 40: 
+        cards = (H[0][i], H[1][i], H[2][i], H[3][i])
+        suit = i//10
+
+
+        presence_of_best = any(cards)
+
+        #we have the strongest card of the suit
+        if cards[0] : 
+            us_point += suit_points[suit]
+
+        #somebody else has it
+        elif presence_of_best:
+            n = sum(cards) #nubmer of player "sharing" the card
+
+            # teamate has it
+            if cards[2]:
+                us_point   =+ 1/n * suit_points[suit]
+                them_point =+ (1-(1/n)) * suit_points[suit]
+
+            # ennemy has it
+            else:
+                them_point =+ suit_points[suit]
+
+        
+        #if we saw a best card, go to next suit
+        if presence_of_best: 
+            i+=10
+        else:
+            i+=1
+    return us_point - them_point
+
+
+
+import statistics
 def node2(
     deck, 
     start_player, 
@@ -396,9 +447,8 @@ def node2(
     count_to_heuristic, 
     card_per_player, 
     force=[all_hand] * 4, 
-    heuristic=hand_heuristic,
-    calculate_minimum=False
-
+    heuristic=gen_future_heuristic(0.4),
+    aggregate=statistics.mean
     ):
     if count_to_heuristic == 0:
         return (heuristic(deck, start_player, atout), [], [])
@@ -424,12 +474,12 @@ def node2(
     c = 0
     U = []
     for u in ddeck[0]:
-        #possibilities = []
+        possibilities = []
         #probas = []
         #value = 0
         #meta_prob = 0
-        total_mean = 0
-        total_elem = 0
+        #total_mean = 0
+        #total_elem = 0
         #print("start")
 
         for p2 in iter_without(make_hand(u), iter_deck, 1):
@@ -467,16 +517,16 @@ def node2(
                     s = score(hand_table)
                     current_score = s if winner%2 == 0 else -s
                     
-                    total_elem += 1
+                    #total_elem += 1
                     if card_per_player-1 == 1:
                         #value += current_score * proba
-                        #possibilities.append((current_score, [u], [table, current_score, winner]))
-                        total_mean += utility(current_score)
+                        possibilities.append(current_score)
+                        #total_mean += utility(current_score)
                     else:
-                        (future_score, action, future_table) = node2(next_deck, winner, atout, count_to_heuristic - 1, card_per_player-1)
+                        (future_score, action, future_table) = node2(next_deck, winner, atout, count_to_heuristic - 1, card_per_player-1, heuristic=heuristic, aggregate=aggregate)
                         #value += (current_score + future_score) * proba
-                        #possibilities.append((current_score + future_score, [u] + action, [table, current_score + future_score, winner] + future_table))
-                        total_mean += utility(current_score + future_score)
+                        possibilities.append(current_score + future_score)
+                        #total_mean += utility(current_score + future_score)
 
                     c += 1
         #print(meta_prob)
@@ -485,8 +535,8 @@ def node2(
         #if meta_prob != 0 or meta_prob != 1:
         #    pass
         #U.append((value, u, []))
-        if total_elem > 0:
-            U.append((total_mean / total_elem, u, []))
+        if possibilities != []:
+            U.append((aggregate(possibilities), u, []))
         else:
             pass
         #if possibilities != []:
@@ -633,16 +683,14 @@ def node2(
     
 
 # Play a game
-def game(verbose=True):
+def game(verbose=True, strategies = [random_strategy(),  random_strategy(), random_strategy(), random_strategy()]):
 
     # Create a deck and attribute the cards to the players
     deck = create_deck()
     board = attribute_cards(deck)
 
     scores = [0, 0, 0, 0] # Vector containing the score of each player
-    vv = 9
-    strategies = [dp_strategy(vv), random_strategy(), dp_strategy(vv), random_strategy()]
-    #strategies = [random_strategy(), highest_strategy(), random_strategy(), highest_strategy()]
+    #strategies = [random_strategy(), highest_strategy()]
     winner = 0 # The winner of the round
     
     if verbose: print_board(board)
@@ -701,25 +749,90 @@ def game(verbose=True):
     #print_score(scores)
     return scores
 
+def min_utility(values):
+    return min(map(utility, values))
+
+def gen_cutoff_agregator(cutoff):
+
+    def cutoff_aggregator(lst):
+        sorted_lst = sorted(lst)
+        index = int(len(lst) * cutoff)
+        return sorted_lst[index]
+
+    return cutoff_aggregator
+
+
+
 #v = True
-v = True
+v = False
+import sys
 
 if v:
-    score = game()
+    score = game(verbose=True, 
+               strategies=[
+                   dp_strategy(5, rollout_heuristique, statistics.mean),
+                   random_strategy(), 
+                   dp_strategy(5, rollout_heuristique, statistics.mean), 
+                   random_strategy()
+               ])
     print_score(score)
 else:
-# Compute the score of 100000 games            
-#for _ in range(10):
-    total_score = [0, 0, 0, 0]
-    atteinged = 10
-    for i in range(100):
-        if i % atteinged == 0:
-            print(f"Computing game {i}")
-            print("Current score : ")
-            print_score(total_score)
-            sys.stdout.flush()
-            #atteinged *= 10
-        total_score = add(game(verbose=False), total_score)
-    print_score(total_score)
+    #total_score = [0, 0, 0, 0]
+    #atteinged = 10
+    for heuristic in [
+        ("future (0.4)", gen_future_heuristic(0.4)), 
+        ("future (0.6)", gen_future_heuristic(0.6)),
+        ("best_card_win", best_card_win_heuristique), 
+        # ("hand point", hand_heuristic)
+    ]:
+        for aggregator in [
+            #("mean + utility", min_utility),
+            ("cutoff 25%", gen_cutoff_agregator(.25)),
+            ("mean", statistics.mean),
+            ("min", min),
+            ("cutoff 45%", gen_cutoff_agregator(.45))
+        ]:
+            for kick_in in [
+                ("5", 5),
+                ("10", 10)
+            ]:
+                for other in [
+                    ("random bot", random_strategy()),
+                    # ("highest bot", highest_strategy())
+                ]:
+                    for starting in [
+                        (f"DP vs {other[0]}", True),
+                        (f"{other[0]} vs DP", False)
+                    ]:
+                        print(f"{starting[0]} -- heuristic={heuristic[0]}, aggregator={aggregator[0]}, kick_in={kick_in[0]}", end="")
+                        sys.stdout.flush()
+                        gen_dp = lambda: dp_strategy(kick_in[1], heuristic[1], aggregator[1])
+
+                        total_score = [0, 0, 0, 0]
+                        for i in range(100):
+                            if i % 10 == 0:
+                                print(".", end="")
+                                sys.stdout.flush()
+
+                            strategies_start = [
+                                gen_dp(), 
+                                other[1], 
+                                gen_dp(), 
+                                other[1]
+                            ]
+
+                            strategies_second = [
+                                other[1],
+                                gen_dp(), 
+                                other[1], 
+                                gen_dp() 
+                            ]
+                            game_score = game(verbose=False, strategies= strategies_start if starting[1] else strategies_second)
+                            total_score = add(game_score, total_score)
+                        
+                        print_score(total_score)
+                        sys.stdout.flush()
+
+
 
 
